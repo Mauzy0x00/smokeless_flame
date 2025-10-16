@@ -12,6 +12,7 @@ use smol::net::{TcpListener, TcpStream};
 use bincode::{Decode, Encode};
 
 //use crate::filesystem::FileSystemManager;
+use crate::filesystem::FileSystemManager;
 use lib::async_io::AsyncConnection;
 use lib::encryption::{EncryptionManager, KeyPair};
 use lib::error::NfsError;
@@ -20,19 +21,30 @@ use smol::Unblock;
 
 pub struct NfsClient {
     server_address: String,
+    fs_manager: FileSystemManager,
     encryption_manager: EncryptionManager,
     connection: Option<AsyncConnection>,
     mount_point: PathBuf,
 }
 
 impl NfsClient {
-    pub fn new(server_address: String, mount_point: PathBuf, keypair: KeyPair) -> Self {
-        Self {
+    pub fn new(
+        server_address: String,
+        mount_point: PathBuf,
+        keypair: KeyPair,
+    ) -> Result<Self, NfsError> {
+        // Validate the export path exists
+        if !mount_point.exists() || !mount_point.is_dir() {
+            return Err(NfsError::InvalidExportPath(mount_point));
+        }
+
+        Ok(Self {
             server_address,
+            fs_manager: FileSystemManager::new(),
             encryption_manager: EncryptionManager::new(keypair),
             connection: None,
             mount_point,
-        }
+        })
     }
 
     pub async fn connect(&mut self) -> Result<(), NfsError> {

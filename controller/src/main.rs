@@ -22,7 +22,6 @@ mod server;
 // mod filesystem_windows;
 
 use clap::Parser;
-use smol::{io, net, prelude::*, Unblock};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]

@@ -765,6 +765,7 @@ dependencies = [
  "futures-lite",
  "lib",
  "log",
+ "nix",
  "smol",
 ]
 

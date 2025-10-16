@@ -16,6 +16,7 @@ use lib::error;
 use lib::protocol;
 
 mod client;
+mod filesystem;
 // mod filesystem_linux;
 // mod filesystem_windows;
 
@@ -65,7 +66,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         // Create and run client
-        let mut client = client::NfsClient::new(server, mount_point, keypair);
+        let mut client = client::NfsClient::new(server, mount_point, keypair)?;
 
         smol::block_on(async {
             client.connect().await?;
