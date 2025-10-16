@@ -11,18 +11,9 @@
 *   File Description: This is the main function of the controller. Supporting functions and loops will be called here
 */
 
-use lib::async_io;
-use lib::encryption;
-use lib::error;
-use lib::protocol;
-
-mod filesystem;
 mod server;
-// mod filesystem_linux;
-// mod filesystem_windows;
 
 use clap::Parser;
-use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -31,12 +22,8 @@ struct Cli {
     #[arg(short, long)]
     verbose: Option<bool>,
 
-    /// Directory to export
-    #[arg(short, long)]
-    export_path: PathBuf,
-
     /// Address to bind to
-    #[arg(short, long, default_value = "0.0.0.0:2049")]
+    #[arg(short, long, default_value = "0.0.0.0:443")]
     bind_address: String,
 }
 
@@ -50,12 +37,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     }
 
-    // Generate encryption keypair
-    let keypair = encryption::KeyPair::generate();
-
     let Cli {
         verbose,
-        export_path,
         bind_address,
     } = cli;
     {
@@ -66,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         // Create and run server
-        let server = server::NfsServer::new(export_path, bind_address, keypair)?;
+        let server = server::NfsServer::new(bind_address)?;
 
         smol::block_on(server.run())?;
     }
