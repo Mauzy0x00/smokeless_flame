@@ -2,7 +2,7 @@ use crate::error::NfsError;
 use bincode::Decode;
 use futures_lite::io::{AsyncReadExt, AsyncWriteExt};
 use smol::net::TcpStream;
-use std::marker::PhantomData;
+// use std::marker::PhantomData;
 
 pub struct AsyncConnection {
     stream: TcpStream,

@@ -31,9 +31,9 @@ impl PlatformFileSystem {
         length: u64,
     ) -> Result<Vec<u8>, NfsError> {
         unblock(move || {
-            let mut file = File::open(&path).map_err(|e| NfsError::IoError(e))?;
+            let mut file = File::open(&path).map_err(NfsError::IoError)?;
 
-            let metadata = file.metadata().map_err(|e| NfsError::IoError(e))?;
+            let metadata = file.metadata().map_err(NfsError::IoError)?;
 
             // Validate offset and length
             if offset >= metadata.len() {
@@ -45,12 +45,11 @@ impl PlatformFileSystem {
             // Seek to the offset
             use std::io::{Read, Seek, SeekFrom};
             file.seek(SeekFrom::Start(offset))
-                .map_err(|e| NfsError::IoError(e))?;
+                .map_err(NfsError::IoError)?;
 
             // Read the data
             let mut buffer = vec![0u8; actual_length as usize];
-            file.read_exact(&mut buffer)
-                .map_err(|e| NfsError::IoError(e))?;
+            file.read_exact(&mut buffer).map_err(NfsError::IoError)?;
 
             Ok(buffer)
         })
@@ -69,16 +68,15 @@ impl PlatformFileSystem {
             let mut file = OpenOptions::new()
                 .write(true)
                 .open(&path)
-                .map_err(|e| NfsError::IoError(e))?;
+                .map_err(NfsError::IoError)?;
 
             // Seek to the offset
             use std::io::{Seek, SeekFrom, Write};
             file.seek(SeekFrom::Start(offset))
-                .map_err(|e| NfsError::IoError(e))?;
+                .map_err(NfsError::IoError)?;
 
             // Write the data
-            file.write_all(&data_owned)
-                .map_err(|e| NfsError::IoError(e))?;
+            file.write_all(&data_owned).map_err(NfsError::IoError)?;
 
             Ok(())
         })
@@ -115,12 +113,12 @@ impl PlatformFileSystem {
 
     pub async fn remove(&self, path: PathBuf) -> Result<(), NfsError> {
         unblock(move || {
-            let metadata = fs::metadata(&path).map_err(|e| NfsError::IoError(e))?;
+            let metadata = fs::metadata(&path).map_err(NfsError::IoError)?;
 
             if metadata.is_dir() {
-                fs::remove_dir_all(&path).map_err(|e| NfsError::IoError(e))?;
+                fs::remove_dir_all(&path).map_err(NfsError::IoError)?;
             } else {
-                fs::remove_file(&path).map_err(|e| NfsError::IoError(e))?;
+                fs::remove_file(&path).map_err(NfsError::IoError)?;
             }
 
             Ok(())
@@ -130,7 +128,7 @@ impl PlatformFileSystem {
 
     pub async fn stat(&self, path: PathBuf) -> Result<FileStat, NfsError> {
         unblock(move || {
-            let metadata = fs::metadata(&path).map_err(|e| NfsError::IoError(e))?;
+            let metadata = fs::metadata(&path).map_err(NfsError::IoError)?;
 
             let file_stat = FileStat {
                 size: metadata.len(),
@@ -162,7 +160,7 @@ impl PlatformFileSystem {
     pub async fn read_dir(&self, path: PathBuf) -> Result<Vec<DirEntry>, NfsError> {
         unblock(move || {
             let entries = fs::read_dir(&path)
-                .map_err(|e| NfsError::IoError(e))?
+                .map_err(NfsError::IoError)?
                 .filter_map(|entry| {
                     let entry = entry.ok()?;
                     let file_type = entry.file_type().ok()?;
@@ -192,7 +190,7 @@ impl PlatformFileSystem {
 
     pub async fn rename(&self, from: PathBuf, to: PathBuf) -> Result<(), NfsError> {
         unblock(move || {
-            fs::rename(&from, &to).map_err(|e| NfsError::IoError(e))?;
+            fs::rename(&from, &to).map_err(NfsError::IoError)?;
 
             Ok(())
         })
@@ -203,7 +201,7 @@ impl PlatformFileSystem {
         unblock(move || {
             #[cfg(unix)]
             {
-                std::os::unix::fs::symlink(&target, &link).map_err(|e| NfsError::IoError(e))?;
+                std::os::unix::fs::symlink(&target, &link).map_err(NfsError::IoError)?;
 
                 Ok(())
             }
@@ -219,9 +217,9 @@ impl PlatformFileSystem {
 
     pub async fn fsync(&self, path: PathBuf) -> Result<(), NfsError> {
         unblock(move || {
-            let file = File::open(&path).map_err(|e| NfsError::IoError(e))?;
+            let file = File::open(&path).map_err(NfsError::IoError)?;
 
-            file.sync_all().map_err(|e| NfsError::IoError(e))?;
+            file.sync_all().map_err(NfsError::IoError)?;
 
             Ok(())
         })

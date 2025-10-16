@@ -54,23 +54,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Generate encryption keypair
     let keypair = encryption::KeyPair::generate();
 
-    match cli {
-        Cli {
-            verbose,
-            export_path,
-            bind_address,
-        } => {
-            log::info!(
-                "Starting NFS server, exporting {} on {}",
-                export_path.display(),
-                bind_address
-            );
+    let Cli {
+        verbose,
+        export_path,
+        bind_address,
+    } = cli;
+    {
+        log::info!(
+            "Starting NFS server, exporting {} on {}",
+            export_path.display(),
+            bind_address
+        );
 
-            // Create and run server
-            let server = server::NfsServer::new(export_path, bind_address, keypair)?;
+        // Create and run server
+        let server = server::NfsServer::new(export_path, bind_address, keypair)?;
 
-            smol::block_on(server.run())?;
-        }
+        smol::block_on(server.run())?;
     }
     Ok(())
 }

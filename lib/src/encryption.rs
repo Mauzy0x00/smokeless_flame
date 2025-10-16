@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use aes_gcm::{
     aead::{rand_core::RngCore, Aead, KeyInit, OsRng},

@@ -1,22 +1,22 @@
-
-
-use std::path::{Path, PathBuf};
 use std::io::Write;
+use std::path::{Path, PathBuf};
 
-use smol::io::{stdin, BufReader};
-use smol::net::{TcpListener, TcpStream};
-use futures_lite::io::BufReadExt;
+use smol::io::BufReader;
+
+use async_process::{Command, Stdio};
+
+use futures_lite::io::{AsyncBufReadExt, AsyncWriteExt};
 use futures_lite::stream::StreamExt;
-use futures_lite::{select, FutureExt};
-
+use smol::net::{TcpListener, TcpStream};
 //use bincode::config::standard;
 use bincode::{Decode, Encode};
 
 //use crate::filesystem::FileSystemManager;
-use lib::encryption::{EncryptionManager, KeyPair};
 use lib::async_io::AsyncConnection;
-use lib::protocol::{NfsMessage, NfsOperation, NfsResponse, FileStat, DirEntry};
+use lib::encryption::{EncryptionManager, KeyPair};
 use lib::error::NfsError;
+use lib::protocol::{DirEntry, FileStat, NfsMessage, NfsOperation, NfsResponse};
+use smol::Unblock;
 
 pub struct NfsClient {
     server_address: String,
@@ -34,19 +34,19 @@ impl NfsClient {
             mount_point,
         }
     }
-    
+
     pub async fn connect(&mut self) -> Result<(), NfsError> {
         log::info!("Connecting to NFS server at {}", self.server_address);
-        
+
         let stream = TcpStream::connect(&self.server_address).await?;
         let mut connection = AsyncConnection::new(stream);
-        
+
         // Perform handshake and setup encryption
         self.perform_handshake(&mut connection).await?;
-        
+
         self.connection = Some(connection);
         log::info!("Connected to NFS server");
-        
+
         Ok(())
     }
 
@@ -57,36 +57,37 @@ impl NfsClient {
     }
 
     pub async fn run(&mut self) -> Result<(), NfsError> {
+        // Make sure this works correctly
+        let mut lines_from_stdin = BufReader::new(Unblock::new(std::io::stdin())).lines();
 
-        let mut lines_from_stdin = BufReader::new(stdin()).lines().fuse();
-        
         loop {
             print!("> ");
-            std::io::stdout().flush().unwrap();
-            
+            std::io::stdout().flush().unwrap(); // Clear stdout buffer
+
             match lines_from_stdin.next().await {
                 Some(line) => {
                     let line = line?;
                     if line.trim() == "exit" || line.trim() == "quit" {
                         break;
                     }
-                    
+
                     self.process_command(line).await?;
                 }
+                // If no command, break the loop and check stdin again
                 None => break,
             }
         }
-        
+
         Ok(())
     }
 
     async fn process_command(&mut self, command_line: String) -> Result<(), NfsError> {
         let parts: Vec<&str> = command_line.split_whitespace().collect();
-        
+
         if parts.is_empty() {
             return Ok(());
         }
-        
+
         let command = parts[0];
         match command {
             "help" => {
@@ -102,7 +103,7 @@ impl NfsClient {
                 println!("  ln -s <target> <link>   - Create symbolic link");
                 println!("  fsync <path>            - Force write of file to storage");
                 println!("  exit                    - Exit the client");
-            },
+            }
             // "ls" => {
             //     if parts.len() < 2 {
             //         println!("Usage: ls <path>");
@@ -117,13 +118,14 @@ impl NfsClient {
                     return Ok(());
                 }
                 let path = PathBuf::from(parts[1]);
-                let mode = parts.get(2)
+                let mode = parts
+                    .get(2)
                     .map(|m| u32::from_str_radix(m, 8).unwrap_or(0o755))
                     .unwrap_or(0o755);
-                
+
                 self.create_directory(path, mode).await?;
                 println!("Directory created successfully");
-            },
+            }
             "rm" => {
                 if parts.len() < 2 {
                     println!("Usage: rm <path>");
@@ -132,7 +134,7 @@ impl NfsClient {
                 let path = PathBuf::from(parts[1]);
                 self.remove(path).await?;
                 println!("Removed successfully");
-            },
+            }
             "stat" => {
                 if parts.len() < 2 {
                     println!("Usage: stat <path>");
@@ -144,11 +146,19 @@ impl NfsClient {
                 println!("  Size: {} bytes", stat.size);
                 println!("  Mode: {:o}", stat.mode);
                 println!("  Type: {}", if stat.is_dir { "Directory" } else { "File" });
-                println!("  Modified: {}", chrono::DateTime::from_timestamp(stat.modified_time as i64, 0)
-                    .map(|dt| dt.to_string()).unwrap_or_else(|| "Unknown".to_string()));
-                println!("  Accessed: {}", chrono::DateTime::from_timestamp(stat.access_time as i64, 0)
-                    .map(|dt| dt.to_string()).unwrap_or_else(|| "Unknown".to_string()));
-            },
+                println!(
+                    "  Modified: {}",
+                    chrono::DateTime::from_timestamp(stat.modified_time as i64, 0)
+                        .map(|dt| dt.to_string())
+                        .unwrap_or_else(|| "Unknown".to_string())
+                );
+                println!(
+                    "  Accessed: {}",
+                    chrono::DateTime::from_timestamp(stat.access_time as i64, 0)
+                        .map(|dt| dt.to_string())
+                        .unwrap_or_else(|| "Unknown".to_string())
+                );
+            }
             "cat" => {
                 if parts.len() < 2 {
                     println!("Usage: cat <path>");
@@ -156,13 +166,13 @@ impl NfsClient {
                 }
                 let path = PathBuf::from(parts[1]);
                 let content = self.read_file(path, 0, u64::MAX).await?;
-                
+
                 // Print file content (assuming it's UTF-8 text)
                 match std::str::from_utf8(&content) {
                     Ok(text) => println!("{}", text),
                     Err(_) => println!("(Binary content, {} bytes)", content.len()),
                 }
-            },
+            }
             "write" => {
                 if parts.len() < 3 {
                     println!("Usage: write <path> <content>");
@@ -170,23 +180,24 @@ impl NfsClient {
                 }
                 let path = PathBuf::from(parts[1]);
                 let content = parts[2..].join(" ").into_bytes();
-                
+
                 self.write_file(path, 0, content).await?;
                 println!("Write successful");
-            },
+            }
             "touch" => {
                 if parts.len() < 2 {
                     println!("Usage: touch <path> [mode]");
                     return Ok(());
                 }
                 let path = PathBuf::from(parts[1]);
-                let mode = parts.get(2)
+                let mode = parts
+                    .get(2)
                     .map(|m| u32::from_str_radix(m, 8).unwrap_or(0o644))
                     .unwrap_or(0o644);
-                
+
                 self.create_file(path, mode).await?;
                 println!("File created successfully");
-            },
+            }
             // "cp" => {
             //     if parts.len() < 3 {
             //         println!("Usage: cp <from> <to>");
@@ -194,7 +205,7 @@ impl NfsClient {
             //     }
             //     let from = PathBuf::from(parts[1]);
             //     let to = PathBuf::from(parts[2]);
-                
+
             //     self.rename(from, to).await?;
             //     println!("Rename/move successful");
             // },
@@ -205,7 +216,7 @@ impl NfsClient {
             //     }
             //     let target = PathBuf::from(parts[2]);
             //     let link = PathBuf::from(parts[3]);
-                
+
             //     self.symlink(target, link).await?;
             //     println!("Symlink created successfully");
             // },
@@ -215,108 +226,124 @@ impl NfsClient {
             //         return Ok(());
             //     }
             //     let path = PathBuf::from(parts[1]);
-                
+
             //     self.fsync(path).await?;
             //     println!("Fsync successful");
             // },
             _ => {
-                println!("Unknown command: {}. Type 'help' for available commands.", command);
+                println!(
+                    "Unknown command: {}. Type 'help' for available commands.",
+                    command
+                );
             }
         }
-        
+
         Ok(())
     }
-    
+
     pub async fn disconnect(&mut self) -> Result<(), NfsError> {
         self.connection = None;
         Ok(())
     }
-    
+
     async fn send_operation(&mut self, operation: NfsOperation) -> Result<Vec<u8>, NfsError> {
-        let connection = self.connection.as_mut()
-            .ok_or(NfsError::NotConnected)?;
-            
+        let connection = self.connection.as_mut().ok_or(NfsError::NotConnected)?;
+
         let message = NfsMessage { operation };
         connection.send_message(&message).await?;
-        
+
         match connection.receive_message::<NfsResponse>().await? {
             NfsResponse::Success(data) => Ok(data),
             NfsResponse::Error(msg) => Err(NfsError::RemoteError(msg)),
         }
     }
-    
-    async fn read_file(&mut self, path: impl AsRef<Path>, offset: u64, length: u64) -> Result<Vec<u8>, NfsError> {
+
+    async fn read_file(
+        &mut self,
+        path: impl AsRef<Path>,
+        offset: u64,
+        length: u64,
+    ) -> Result<Vec<u8>, NfsError> {
         let operation = NfsOperation::Read {
             path: path.as_ref().to_path_buf(),
             offset,
             length,
         };
-        
+
         self.send_operation(operation).await
     }
-    
-    async fn write_file(&mut self, path: impl AsRef<Path>, offset: u64, data: Vec<u8>) -> Result<(), NfsError> {
+
+    async fn write_file(
+        &mut self,
+        path: impl AsRef<Path>,
+        offset: u64,
+        data: Vec<u8>,
+    ) -> Result<(), NfsError> {
         let operation = NfsOperation::Write {
             path: path.as_ref().to_path_buf(),
             offset,
             data,
         };
-        
+
         let _ = self.send_operation(operation).await?;
         Ok(())
     }
-    
+
     async fn create_file(&mut self, path: impl AsRef<Path>, mode: u32) -> Result<(), NfsError> {
         let operation = NfsOperation::Create {
             path: path.as_ref().to_path_buf(),
             mode,
         };
-        
+
         let _ = self.send_operation(operation).await?;
         Ok(())
     }
-    
-    async fn create_directory(&mut self, path: impl AsRef<Path>, mode: u32) -> Result<(), NfsError> {
+
+    async fn create_directory(
+        &mut self,
+        path: impl AsRef<Path>,
+        mode: u32,
+    ) -> Result<(), NfsError> {
         let operation = NfsOperation::Mkdir {
             path: path.as_ref().to_path_buf(),
             mode,
         };
-        
+
         let _ = self.send_operation(operation).await?;
         Ok(())
     }
-    
+
     async fn remove(&mut self, path: impl AsRef<Path>) -> Result<(), NfsError> {
         let operation = NfsOperation::Remove {
             path: path.as_ref().to_path_buf(),
         };
-        
+
         let _ = self.send_operation(operation).await?;
         Ok(())
     }
-    
-    /// An asynchronous function designed to retrieve metadata (stat information) about a file or directory specified by its path. 
-    /// It interacts with the network file system to perform this operation. The function returns a `Result` type that, on success, 
+
+    /// An asynchronous function designed to retrieve metadata (stat information) about a file or directory specified by its path.
+    /// It interacts with the network file system to perform this operation. The function returns a `Result` type that, on success,
     /// contains a `FileStat` structure with the file's metadata, or an `NfsError` if something goes wrong.
     async fn stat(&mut self, path: impl AsRef<Path>) -> Result<FileStat, NfsError> {
         let operation = NfsOperation::Stat {
             path: path.as_ref().to_path_buf(),
         };
-        
+
         let data = self.send_operation(operation).await?;
         // let stat: FileStat = bincode::decode_from_slice(&data, bincode::config::standard())?;
         // Ok(stat)
         match bincode::decode_from_slice(&data, bincode::config::standard()) {
             Ok((stat, _)) => Ok(stat),
-            Err(e) => Err(NfsError::DeserializationError(e.to_string()))
+            Err(e) => Err(NfsError::DeserializationError(e.to_string())),
         }
     }
-    
+
     async fn read_dir(&mut self, path: impl AsRef<Path>) -> Result<Vec<DirEntry>, NfsError> {
         let operation = NfsOperation::Readdir {
             path: path.as_ref().to_path_buf(),
         };
-        
+
         let data = self.send_operation(operation).await?;
         let (entries, _) = bincode::decode_from_slice(&data, bincode::config::standard())?;
         Ok(entries)

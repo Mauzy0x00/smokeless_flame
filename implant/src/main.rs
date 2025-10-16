@@ -1,8 +1,8 @@
 /* smokeless_flame - implant/src/main.rs
 *
-*   Purpose: Reimagine NFS with security in mind using a memory safe programming language, Rust. 
-*               This will be re-build from the bottom up. Striving first for functionality with security by default, 
-*               then focusing on user experience. 
+*   Purpose: Reimagine NFS with security in mind using a memory safe programming language, Rust.
+*               This will be re-build from the bottom up. Striving first for functionality with security by default,
+*               then focusing on user experience.
 *
 *   Author: Mauzy0x00
 *   Start Date: 10-14-2025
@@ -21,9 +21,6 @@ mod client;
 
 use clap::Parser;
 use smol::{io, net, prelude::*, Unblock};
-use std::path::PathBuf;
-
-use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -55,48 +52,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Generate encryption keypair
     let keypair = encryption::KeyPair::generate();
 
-    match cli {
-        Cli {
-            verbose,
+    let Cli {
+        verbose,
+        server,
+        mount_point,
+    } = cli;
+    {
+        log::info!(
+            "Starting NFS client, connecting to {} and mounting at {}",
             server,
-            mount_point,
-        } => {
-        log::info!("Starting NFS client, connecting to {} and mounting at {}", server, mount_point.display());
+            mount_point.display()
+        );
 
         // Create and run client
         let mut client = client::NfsClient::new(server, mount_point, keypair);
 
-            smol::block_on(async {
-                client.connect().await?;
+        smol::block_on(async {
+            client.connect().await?;
 
-                log::info!("Connected to server. Press Ctrl+C to disconnect.");
-                
-                // TODO:
-                // Implement input loop for the client 
-                client.run().await?;
+            log::info!("Connected to server. Press Ctrl+C to disconnect.");
 
-                // // Create remote directory
-                // let remote_dir_path = "remote_test_dir"; 
-                // let mode: u32 = 0o755;
-                // match client.create_directory(remote_dir_path, mode).await {
-                //     Ok(_) => log::info!("Successfully created directory: {}", remote_dir_path),
-                //     Err(e) => log::error!("Error creating directory: {}", e),
-                // }
+            // TODO:
+            // Implement input loop for the client
+            client.run().await?;
 
-                // // Wait for Ctrl+C
-                // let (tx, rx) = async_std::channel::bounded(1);
-                // ctrlc::set_handler(move || {
-                //     let _ = tx.try_send(());
-                // })?;
+            // // Create remote directory
+            // let remote_dir_path = "remote_test_dir";
+            // let mode: u32 = 0o755;
+            // match client.create_directory(remote_dir_path, mode).await {
+            //     Ok(_) => log::info!("Successfully created directory: {}", remote_dir_path),
+            //     Err(e) => log::error!("Error creating directory: {}", e),
+            // }
 
-                // let _ = rx.recv().await;
+            // // Wait for Ctrl+C
+            // let (tx, rx) = async_std::channel::bounded(1);
+            // ctrlc::set_handler(move || {
+            //     let _ = tx.try_send(());
+            // })?;
 
-                client.disconnect().await?;
-                log::info!("Disconnected from server");
+            // let _ = rx.recv().await;
 
-                Ok::<(), error::NfsError>(())
-            })?;
-        }
+            client.disconnect().await?;
+            log::info!("Disconnected from server");
+
+            Ok::<(), error::NfsError>(())
+        })?;
     }
 
     Ok(())

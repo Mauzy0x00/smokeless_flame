@@ -51,7 +51,8 @@ impl NfsServer {
                 if let Err(e) = server.handle_client(stream).await {
                     log::error!("Error handling client: {:?}", e);
                 }
-            });
+            })
+            .detach(); // Detch the task to run independently
         }
 
         Ok(())
