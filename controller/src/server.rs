@@ -388,7 +388,7 @@ pub fn print_banner() {
     println!("            DNS C2 Server - Command & Control");
     println!("{:=<70}", "");
     println!("Server listening on 0.0.0.0:5353");
-    println!("(Use port 53 for production - requires sudo/admin)\n");
+    println!("(Use port 53 for real use - requires sudo)\n");
 }
 
 pub fn print_help() {
