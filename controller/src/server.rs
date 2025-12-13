@@ -58,16 +58,14 @@ impl From<u16> for QType {
             _ => QType::Unknown(val),
         }
     }
-}
 
-impl QType {
-    fn to_u16(&self) -> u16 {
-        match self {
-            QType::A => 1,
-            QType::TXT => 16,
-            QType::Unknown(v) => *v,
-        }
-    }
+    // fn to_u16(&self) -> u16 {
+    //     match self {
+    //         QType::A => 1,
+    //         QType::TXT => 16,
+    //         QType::Unknown(v) => *v,
+    //     }
+    // }
 }
 
 // Parsed DNS Question
@@ -290,9 +288,9 @@ pub fn build_txt_record_response(query: &[u8], query_len: usize, txt_data: &str)
     // Answer section
     response.push(0xC0);
     response.push(0x0C);
-    response.extend_from_slice(&16u16.to_be_bytes()); // Type TXT
-    response.extend_from_slice(&1u16.to_be_bytes()); // Class IN
-    response.extend_from_slice(&60u32.to_be_bytes()); // TTL
+    response.extend_from_slice(&16u16.to_be_bytes());   // Type TXT
+    response.extend_from_slice(&1u16.to_be_bytes());    // Class IN
+    response.extend_from_slice(&60u32.to_be_bytes());   // TTL
 
     let txt_bytes = txt_data.as_bytes();
     let data_len = (txt_bytes.len() + 1) as u16;
