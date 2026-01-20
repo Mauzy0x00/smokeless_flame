@@ -3,6 +3,10 @@ use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
+pub const C2_SERVER: &str = "127.0.0.1:5353";
+pub const DOMAIN: &str = "c2.local";
+pub const IMPLANT_ID: &str = "implant1";
+pub const BEACON_INTERVAL: u64 = 5; // seconds
 
 // Simple DNS query builder
 pub fn build_dns_query(domain: &str, qtype: u16) -> Vec<u8> {
