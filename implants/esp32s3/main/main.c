@@ -31,7 +31,7 @@
 #define WIFI_PASS       "PASSWORD"
 #define C2_SERVER_IP    "192.168.1.1"
 #define C2_SERVER_PORT  5353
-#define DOMAIN          "c2.mauzy.net" // Correct this
+#define DOMAIN          "c2.local"
 #define BEACON_INTERVAL_MS 5000  
 
 static const char *TAG = "smokeless_flame";

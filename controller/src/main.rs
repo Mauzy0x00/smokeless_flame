@@ -16,6 +16,23 @@ fn main() -> std::io::Result<()> {
         cli_loop(cli_state);
     });
 
+    
+    // Start cleanup thread - runs every 60 seconds
+    let cleanup_state = Arc::clone(&c2_state);
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_secs(60));
+            let mut state = cleanup_state.lock().unwrap();
+            let removed = state.cleanup_stale_sessions();
+            if removed > 0 {
+                println!("\n[!] Auto-cleanup removed {} stale session(s)", removed);
+                print!("c2> ");
+                io::stdout().flush().ok();
+            }
+        }
+    });
+
+
     let mut buf = [0u8; 512];
 
     loop {
