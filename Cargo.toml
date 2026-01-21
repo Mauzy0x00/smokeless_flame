@@ -2,7 +2,7 @@
 
 [workspace]
 members = [
-	"implant",
+	"implants/general",
 	"controller",
     "lib"
 ]

@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 smol = "2.0.2"
 
-lib = { path = "../lib" }
+lib = { path = "../../lib" }
 bincode = "2.0.1"
 futures-lite = "2.6.1"
 log = "0.4.28"
