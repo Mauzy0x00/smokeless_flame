@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use std::time::SystemTime;
 
 // DNS Header structure (12 bytes)
 // See RFC 1035 Section 4.1.1

