@@ -1,7 +1,6 @@
 # Smokeless Flame
-This is a project I am starting to learn about C2s. Have been without power for a few days now and this candle next to me gave me the inspiration. It is so cold ...
+A work in progress command and control framework.
 
-The skeleton of this framework is based on my async-std-chat application. I will be removing druid from the code and likely implementing some other time of UI. Either just CLI or some other GUI platform. Maybe just using the browser. 
+The Controller communicates with many implants over DNS. The implants beacon to the server periodically waiting for commands. Active sessions are stored and inactive sessions are automatically pruned. As of now, the controller has the ability to send arbitrary commands to Windows and Linux agents and recieve the result of the commands. The conctroller can either specify by implant ID or command all implants to carry out the same command. 
 
-Just another learning project.
-
+<img width="779" height="955" alt="image" src="https://github.com/user-attachments/assets/62dbd4a9-bc1a-4776-b61f-7a7d7d1ff25c" />
