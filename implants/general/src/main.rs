@@ -6,7 +6,7 @@ use std::time::Duration;
 
 fn main() -> std::io::Result<()> {
     let implant_id = generate_implant_id();
-    
+
     println!("DNS C2 Implant");
     println!("Implant ID: {}", implant_id);
     println!("C2 Server: {}", C2_SERVER);

